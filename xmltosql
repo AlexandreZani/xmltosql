@@ -1,0 +1,128 @@
+#!/usr/bin/python
+# Copyright (c) 2009 Alexandre Zani
+# 
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+# 
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
+
+from xml.etree.ElementTree import parse
+import sys
+
+def CreateSqlTable(tableNode, outFile):
+  indices = []
+  if tableNode.tag != "table":
+    raise Exception('This is not a table node')
+
+  query = "CREATE TABLE " + tableNode.attrib['name'] + "\n(\n"
+  first = 0
+
+  for field in tableNode:
+    if field.tag == "field":
+      if first == 0:
+        first += 1
+      else:
+        query += ",\n"
+      query += field.attrib['name'] + " " + field.attrib['type']
+
+      if 'signed' in field.attrib:
+        if field.attrib['signed'] == 'false':
+          query += " UNSIGNED"
+        if field.attrib['signed'] == 'true':
+          query += " SIGNED"
+
+      if 'autoincrement' in field.attrib:
+        if field.attrib['autoincrement'] == 'true':
+          query += " AUTO_INCREMENT"
+  
+      if 'unique' in field.attrib:
+        if field.attrib['unique'] == 'true':
+          query += " UNIQUE"
+
+      if 'indexed' in field.attrib:
+        if field.attrib['indexed'] == 'true':
+          indices.append(field.attrib['name'])
+
+
+  query += ");\n\n"
+
+  for field in indices:
+    query += "CREATE INDEX " + field + "Index ON "
+    query += tableNode.attrib['name'] + " (" + field + ");\n\n"
+
+  outFile.write(query)
+
+def CreateSqlDb(dbNode, outFile):
+  if dbNode.tag != "MySQLDB":
+    raise Exception('This is not a database node')
+
+  query = "DROP DATABASE IF EXISTS " + dbNode.attrib['name'] + ";\n"
+  outFile.write(query)
+  query = "CREATE DATABASE " + dbNode.attrib['name'] + ";\n"
+  outFile.write(query)
+  query = "USE " + dbNode.attrib['name'] + ";\n"
+  outFile.write(query)
+
+  for table in dbNode:
+    if table.tag == "table":
+      CreateSqlTable(table, outFile)
+
+
+if len(sys.argv) < 3:
+    print """
+Proper syntax is:
+xmltosql inputfile outputfile
+
+If either is missing, the program will fail.
+The accepted XML tags are: MySQLDB, table and field
+All have a name property which is the name for the database, the table or the field
+fields also take a type property which is the field's datatype
+also, fields can take a signed property which is optional and is either true or false
+if it is false, the field is unsigned, otherwise, it is signed
+
+This tool only works with MySQL at the moment
+
+Example:
+<MySQLDB name="mydatabase">
+    <table name="Names">
+        <field name="firstName" type="TINYTEXT" />
+        <field name="lastName" type="TINYTEXT" />
+    </table>
+    <table name="Product"
+        <field name="productName" type="TINYTEXT" />
+        <field name="productPrice" type="INT" />
+        <field name="inventory" type="INT" signed="false" />
+    </table>
+</MySQLDB>
+    """
+    exit()
+
+inputFile = open(sys.argv[1])
+if not inputFile:
+    print(sys.argv[1] + " could not be opened!")
+    exit()
+outputFile = open(sys.argv[2], "w")
+if not outputFile:
+    print(sys.argv[2] + " could not be opened!")
+    exit()
+
+tree = parse(inputFile)
+root = tree.getroot()
+
+CreateSqlDb(root, outputFile)
+
+inputFile.close()
+outputFile.close()
